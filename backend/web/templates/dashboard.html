@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1>AutoTrader <span class="mode {{ d.mode }}">{{ d.mode }}</span></h1>
+    {% if d.kill_switch %}<span class="bad">Kill switch aktiv ({{ d.kill_reason }})</span>{% endif %}
+  </div>
+  <div class="controls">
+    {% if d.kill_switch %}
+      <form method="post" action="/resume"><button class="safe">GENOPTAG HANDEL</button></form>
+    {% else %}
+      <form method="post" action="/kill-switch">
+        <label class="chk"><input type="checkbox" name="close_positions" value="yes"> luk også positioner</label>
+        <button class="danger">STOP TRADING</button>
+      </form>
+    {% endif %}
+    <form method="post" action="/mode">
+      {% if d.raw_mode == 'paper' %}
+        <input type="hidden" name="mode" value="live"><button class="neutral" onclick="return confirm('Aktivér LIVE handel med rigtige penge?')">Skift til LIVE</button>
+      {% else %}
+        <input type="hidden" name="mode" value="paper"><button class="neutral">Skift til PAPER</button>
+      {% endif %}
+    </form>
+    <a href="/logout" class="muted">log ud</a>
+  </div>
+</div>
+
+<div class="cards">
+  <div class="card"><div class="label">Portfolio Value</div><div class="value">${{ d.portfolio_value }}</div></div>
+  <div class="card"><div class="label">Today's P/L</div><div class="value {{ 'pos' if d.todays_pnl >= 0 else 'neg' }}">${{ d.todays_pnl }}</div></div>
+  <div class="card"><div class="label">Total P/L</div><div class="value {{ 'pos' if d.total_pnl >= 0 else 'neg' }}">${{ d.total_pnl }}</div></div>
+  <div class="card"><div class="label">Cash (settled)</div><div class="value">${{ d.cash }} <span class="muted">(${{ d.settled_cash }})</span></div></div>
+  <div class="card"><div class="label">Market Exposure</div><div class="value">{{ d.exposure_pct }}%</div></div>
+</div>
+
+<h2>Open Positions</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>Symbol</th><th>Antal</th><th>Entry</th><th>Aktuel</th><th>P/L</th><th>P/L %</th><th>Strategi</th></tr>
+  {% for p in d.positions %}
+  <tr>
+    <td>{{ p.symbol }}</td><td>{{ p.qty }}</td><td>${{ p.entry }}</td><td>${{ p.current }}</td>
+    <td class="{{ 'pos' if p.pnl >= 0 else 'neg' }}">${{ p.pnl }}</td>
+    <td class="{{ 'pos' if p.pnl_pct >= 0 else 'neg' }}">{{ p.pnl_pct }}%</td>
+    <td>{{ p.strategy }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="7" class="muted">Ingen åbne positioner. Cash er en gyldig position.</td></tr>
+  {% endfor %}
+</table>
+</div>
+
+<h2>Recent Trades</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>Tidspunkt</th><th>Symbol</th><th>Side</th><th>Pris</th><th>Antal</th><th>Strategi</th></tr>
+  {% for t in d.trades %}
+  <tr>
+    <td>{{ t.filled_at.strftime('%d-%m %H:%M') }}</td><td>{{ t.symbol }}</td>
+    <td class="{{ 'pos' if t.side == 'buy' else 'neg' }}">{{ t.side|upper }}</td>
+    <td>${{ t.price }}</td><td>{{ t.qty }}</td><td>{{ t.strategy }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">Ingen handler endnu.</td></tr>
+  {% endfor %}
+</table>
+</div>
+
+<h2>Strategy Performance</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>Strategi</th><th>Lukkede handler</th><th>Vundne</th><th>Net P/L</th></tr>
+  {% for s in d.strategy_perf %}
+  <tr>
+    <td>{{ s.strategy }}</td><td>{{ s.closed_trades }}</td><td>{{ s.wins }}</td>
+    <td class="{{ 'pos' if s.net_pnl >= 0 else 'neg' }}">${{ s.net_pnl }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="muted">Ingen lukkede handler endnu.</td></tr>
+  {% endfor %}
+</table>
+</div>
+
+<h2>Seneste signaler</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>Tid</th><th>Strategi</th><th>Symbol</th><th>Side</th><th>Status</th><th>Begrundelse</th></tr>
+  {% for s in d.signals %}
+  <tr>
+    <td>{{ s.created_at.strftime('%d-%m %H:%M') }}</td><td>{{ s.strategy }}</td><td>{{ s.symbol }}</td>
+    <td>{{ s.side|upper }}</td><td>{{ s.status }}{% if s.skip_reason %} <span class="muted">({{ s.skip_reason }})</span>{% endif %}</td>
+    <td class="muted">{{ s.reason }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="6" class="muted">Ingen signaler endnu.</td></tr>
+  {% endfor %}
+</table>
+</div>
+
+<h2>System Health</h2>
+<div class="cards">
+  <div class="card"><div class="label">Broker</div><div class="value {{ 'ok' if d.health.broker_connected else 'bad' }}">{{ 'Connected' if d.health.broker_connected else 'Ikke forbundet' }}</div></div>
+  <div class="card"><div class="label">Kritiske fejl 24t</div><div class="value {{ 'ok' if d.health.critical_events_24h == 0 else 'bad' }}">{{ d.health.critical_events_24h }}</div></div>
+  <div class="card"><div class="label">Sidste strategikørsel</div><div class="value" style="font-size:.85rem">{{ d.health.last_strategy_run }}</div></div>
+  <div class="card"><div class="label">Sidste reconciliation</div><div class="value" style="font-size:.85rem">{{ d.health.last_reconciliation }}</div></div>
+</div>
+
+<h2>Paper gate (før live)</h2>
+<div class="table-wrap">
+<table>
+  {% for name, passed in d.paper_gate.checks.items() %}
+  <tr><td>{{ name.replace('_', ' ') }}</td><td class="{{ 'ok' if passed else 'bad' }}">{{ 'OK' if passed else 'Ikke opfyldt' }}</td></tr>
+  {% endfor %}
+  <tr><td><strong>Samlet</strong></td><td class="{{ 'ok' if d.paper_gate.passed else 'bad' }}"><strong>{{ 'BESTÅET' if d.paper_gate.passed else 'IKKE BESTÅET' }}</strong></td></tr>
+</table>
+</div>
+
+<h2>Seneste system events</h2>
+<div class="table-wrap">
+<table>
+  <tr><th>Tid</th><th>Niveau</th><th>Type</th><th>Besked</th></tr>
+  {% for e in d.events %}
+  <tr>
+    <td>{{ e.ts.strftime('%d-%m %H:%M') }}</td>
+    <td class="{{ 'bad' if e.level in ('warning', 'critical') else 'muted' }}">{{ e.level }}</td>
+    <td>{{ e.kind }}</td><td class="muted">{{ e.message }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="muted">Ingen events.</td></tr>
+  {% endfor %}
+</table>
+</div>
+{% endblock %}
