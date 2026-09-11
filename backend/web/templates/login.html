@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<div style="max-width:340px; margin:15vh auto;">
+  <h1>AutoTrader</h1>
+  <p class="muted">Log ind for at se dashboardet.</p>
+  {% if error %}<p class="bad">{{ error }}</p>{% endif %}
+  <form method="post" action="/login" style="display:flex; gap:8px;">
+    <input type="password" name="password" placeholder="Adgangskode" autofocus>
+    <button class="safe" type="submit">Log ind</button>
+  </form>
+</div>
+{% endblock %}
