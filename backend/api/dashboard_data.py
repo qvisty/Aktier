@@ -90,13 +90,35 @@ def build_overview(session: Session, broker: Broker | None) -> dict:
                 Position.strategy == strategy,
                 Position.realized_pnl > 0,
             )
+        ) or 0
+        gross_win = session.scalar(
+            select(func.sum(Position.realized_pnl)).where(
+                Position.status == "closed",
+                Position.strategy == strategy,
+                Position.realized_pnl > 0,
+            )
+        ) or 0.0
+        gross_loss = -(
+            session.scalar(
+                select(func.sum(Position.realized_pnl)).where(
+                    Position.status == "closed",
+                    Position.strategy == strategy,
+                    Position.realized_pnl <= 0,
+                )
+            )
+            or 0.0
         )
         strategy_perf.append(
             {
                 "strategy": strategy or "ukendt",
                 "closed_trades": count,
-                "wins": wins or 0,
+                "wins": wins,
+                "win_rate": round(wins / count * 100, 1) if count else 0.0,
+                "profit_factor": round(gross_win / gross_loss, 2) if gross_loss > 0 else None,
+                "expectancy": round((pnl or 0.0) / count, 2) if count else 0.0,
                 "net_pnl": round(pnl or 0.0, 2),
+                "gate_target": 30,
+                "gate_pct": min(100, round(count / 30 * 100)),
             }
         )
 
