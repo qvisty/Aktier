@@ -1,133 +1,274 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="topbar">
-  <div>
-    <h1>AutoTrader <span class="mode {{ d.mode }}">{{ d.mode }}</span></h1>
-    {% if d.kill_switch %}<span class="bad">Kill switch aktiv ({{ d.kill_reason }})</span>{% endif %}
+
+<header class="app">
+  <div class="brand">
+    {% include "_logo.html" %}
+    <div>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <h1>AutoTrader</h1>
+        {% if d.mode == 'LIVE' %}<span class="badge live"><span class="dot"></span>LIVE TRADING</span>
+        {% elif d.mode == 'PAPER' %}<span class="badge paper"><span class="dot"></span>PAPER TRADING</span>
+        {% else %}<span class="badge stopped"><span class="dot"></span>STOPPED</span>{% endif %}
+      </div>
+      <div class="tagline"><span class="dot"></span>Self-hosted Linux / 24/7</div>
+    </div>
   </div>
-  <div class="controls">
-    {% if d.kill_switch %}
-      <form method="post" action="/resume"><button class="safe">GENOPTAG HANDEL</button></form>
-    {% else %}
-      <form method="post" action="/kill-switch">
-        <label class="chk"><input type="checkbox" name="close_positions" value="yes"> luk også positioner</label>
-        <button class="danger">STOP TRADING</button>
-      </form>
-    {% endif %}
+  <div style="display:flex; align-items:center; gap:10px;">
     <form method="post" action="/mode">
       {% if d.raw_mode == 'paper' %}
-        <input type="hidden" name="mode" value="live"><button class="neutral" onclick="return confirm('Aktivér LIVE handel med rigtige penge?')">Skift til LIVE</button>
+        <input type="hidden" name="mode" value="live">
+        <button onclick="return confirm('Aktivér LIVE handel med rigtige penge?')">Skift til LIVE</button>
       {% else %}
-        <input type="hidden" name="mode" value="paper"><button class="neutral">Skift til PAPER</button>
+        <input type="hidden" name="mode" value="paper">
+        <button>Skift til PAPER</button>
       {% endif %}
     </form>
-    <a href="/logout" class="muted">log ud</a>
+    <a href="/logout" class="faint">log ud</a>
+  </div>
+</header>
+
+<nav class="sections">
+  <a href="#oversigt">Oversigt</a>
+  <a href="#positioner">Positioner</a>
+  <a href="#handler">Handler</a>
+  <a href="#strategier">Strategier</a>
+  <a href="#signaler">Signaler</a>
+  <a href="#system">System</a>
+</nav>
+
+{# ---- Kill switch ---- #}
+<div class="kill-panel" id="killswitch">
+  {% if d.kill_switch %}
+    <div class="card-head" style="margin-bottom:6px;">
+      <h2>NØDSTOP AKTIVT</h2>
+      <span class="badge bad">ENGINE LÅST</span>
+    </div>
+    <p class="muted" style="margin:0;">Al ny handel er stoppet{% if d.kill_reason %}, årsag: <span class="num">{{ d.kill_reason }}</span>{% endif %}. Tilstanden er persistent og overlever genstart.</p>
+    <form method="post" action="/resume">
+      <button class="resume-btn" type="submit">Genoptag handel</button>
+    </form>
+  {% else %}
+    <div class="card-head" style="margin-bottom:6px;">
+      <h2>NØDSTOP (KILL SWITCH)</h2>
+      <span class="badge neutral">ENGINE AKTIV</span>
+    </div>
+    <p class="muted" style="margin:0;">Stopper omgående al ny handel og annullerer åbne ikke eksekverede ordrer.</p>
+    <form method="post" action="/kill-switch" id="kill-form">
+      <label class="chk" style="margin-top:8px;"><input type="checkbox" name="close_positions" value="yes"> luk også eksisterende positioner</label>
+      <button type="button" class="hold-btn" id="hold-btn">
+        <span class="fill" id="hold-fill"></span>
+        <span class="lbl"><span>&#9211; Hold nede for STOP TRADING</span><span class="num" id="hold-count">2.0s</span></span>
+      </button>
+    </form>
+  {% endif %}
+</div>
+
+{# ---- Oversigt ---- #}
+<div class="card" id="oversigt">
+  <div class="card-head">
+    <h2>Porteføljeoversigt <span class="faint num">(USD)</span></h2>
+    <span class="badge neutral">SETTLED CASH: <span class="num">${{ d.settled_cash }}</span></span>
+  </div>
+  <div class="tile" style="margin-bottom:8px;">
+    <div class="label">Samlet porteføljeværdi</div>
+    <div class="hero-value">${{ d.portfolio_value }}</div>
+    <div class="sub {{ 'pos' if d.total_pnl >= 0 else 'neg' }}">{{ '+' if d.total_pnl >= 0 }}{{ d.total_pnl }} USD total P/L</div>
+  </div>
+  <div class="grid cols-2 cols-4">
+    <div class="tile">
+      <div class="label">Dagens P/L</div>
+      <div class="value {{ 'pos' if d.todays_pnl >= 0 else 'neg' }}">{{ '+' if d.todays_pnl >= 0 }}{{ d.todays_pnl }}</div>
+    </div>
+    <div class="tile">
+      <div class="label">Total P/L</div>
+      <div class="value {{ 'pos' if d.total_pnl >= 0 else 'neg' }}">{{ '+' if d.total_pnl >= 0 }}{{ d.total_pnl }}</div>
+    </div>
+    <div class="tile">
+      <div class="label">Cash</div>
+      <div class="value">${{ d.cash }}</div>
+      <div class="sub">settled ${{ d.settled_cash }}</div>
+    </div>
+    <div class="tile">
+      <div class="label">Markedseksponering</div>
+      <div class="value">{{ d.exposure_pct }}%</div>
+      <div class="bar cyan"><span style="width:{{ [d.exposure_pct, 100] | min }}%"></span></div>
+      <div class="sub">gearing: 0%</div>
+    </div>
   </div>
 </div>
 
-<div class="cards">
-  <div class="card"><div class="label">Portfolio Value</div><div class="value">${{ d.portfolio_value }}</div></div>
-  <div class="card"><div class="label">Today's P/L</div><div class="value {{ 'pos' if d.todays_pnl >= 0 else 'neg' }}">${{ d.todays_pnl }}</div></div>
-  <div class="card"><div class="label">Total P/L</div><div class="value {{ 'pos' if d.total_pnl >= 0 else 'neg' }}">${{ d.total_pnl }}</div></div>
-  <div class="card"><div class="label">Cash (settled)</div><div class="value">${{ d.cash }} <span class="muted">(${{ d.settled_cash }})</span></div></div>
-  <div class="card"><div class="label">Market Exposure</div><div class="value">{{ d.exposure_pct }}%</div></div>
+{# ---- Positioner ---- #}
+<div class="card" id="positioner">
+  <div class="card-head">
+    <h2>Åbne positioner</h2>
+    <span class="badge neutral">{{ d.positions | length }} AKTIVE</span>
+  </div>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Symbol</th><th>Strategi</th><th class="num">Antal</th><th class="num">Entry</th><th class="num">Aktuel</th><th class="num">P/L</th><th class="num">P/L %</th></tr>
+    {% for p in d.positions %}
+    <tr>
+      <td class="sym">{{ p.symbol }}</td>
+      <td><span class="chip">{{ p.strategy | upper }}</span></td>
+      <td class="num">{{ p.qty }}</td>
+      <td class="num">{{ p.entry }}</td>
+      <td class="num">{{ p.current }}</td>
+      <td class="num {{ 'pos' if p.pnl >= 0 else 'neg' }}">{{ '+' if p.pnl >= 0 }}{{ p.pnl }}</td>
+      <td class="num {{ 'pos' if p.pnl_pct >= 0 else 'neg' }}">{{ '+' if p.pnl_pct >= 0 }}{{ p.pnl_pct }}%</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="faint">Ingen åbne positioner. Cash er en gyldig position.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
 </div>
 
-<h2>Open Positions</h2>
-<div class="table-wrap">
-<table>
-  <tr><th>Symbol</th><th>Antal</th><th>Entry</th><th>Aktuel</th><th>P/L</th><th>P/L %</th><th>Strategi</th></tr>
-  {% for p in d.positions %}
-  <tr>
-    <td>{{ p.symbol }}</td><td>{{ p.qty }}</td><td>${{ p.entry }}</td><td>${{ p.current }}</td>
-    <td class="{{ 'pos' if p.pnl >= 0 else 'neg' }}">${{ p.pnl }}</td>
-    <td class="{{ 'pos' if p.pnl_pct >= 0 else 'neg' }}">{{ p.pnl_pct }}%</td>
-    <td>{{ p.strategy }}</td>
-  </tr>
-  {% else %}
-  <tr><td colspan="7" class="muted">Ingen åbne positioner. Cash er en gyldig position.</td></tr>
-  {% endfor %}
-</table>
+{# ---- Handler ---- #}
+<div class="card" id="handler">
+  <div class="card-head">
+    <h2>Seneste handler</h2>
+    <span class="badge ok"><span class="dot"></span>AUDIT TRAIL</span>
+  </div>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Tidspunkt</th><th>Side</th><th>Symbol</th><th class="num">Pris</th><th class="num">Antal</th><th>Strategi</th></tr>
+    {% for t in d.trades %}
+    <tr>
+      <td class="num faint">{{ t.filled_at.strftime('%d-%m %H:%M') }}</td>
+      <td><span class="badge {{ 'ok' if t.side == 'buy' else 'bad' }}">{{ 'KØB' if t.side == 'buy' else 'SALG' }}</span></td>
+      <td class="sym">{{ t.symbol }}</td>
+      <td class="num">{{ t.price }}</td>
+      <td class="num">{{ t.qty }}</td>
+      <td><span class="chip">{{ t.strategy | upper }}</span></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="faint">Ingen handler endnu.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
 </div>
 
-<h2>Recent Trades</h2>
-<div class="table-wrap">
-<table>
-  <tr><th>Tidspunkt</th><th>Symbol</th><th>Side</th><th>Pris</th><th>Antal</th><th>Strategi</th></tr>
-  {% for t in d.trades %}
-  <tr>
-    <td>{{ t.filled_at.strftime('%d-%m %H:%M') }}</td><td>{{ t.symbol }}</td>
-    <td class="{{ 'pos' if t.side == 'buy' else 'neg' }}">{{ t.side|upper }}</td>
-    <td>${{ t.price }}</td><td>{{ t.qty }}</td><td>{{ t.strategy }}</td>
-  </tr>
-  {% else %}
-  <tr><td colspan="6" class="muted">Ingen handler endnu.</td></tr>
-  {% endfor %}
-</table>
-</div>
-
-<h2>Strategy Performance</h2>
-<div class="table-wrap">
-<table>
-  <tr><th>Strategi</th><th>Lukkede handler</th><th>Vundne</th><th>Net P/L</th></tr>
+{# ---- Strategier ---- #}
+<div class="card" id="strategier">
+  <div class="card-head">
+    <h2>Strategikonkurrence</h2>
+    <span class="badge neutral">GATEKEEPER: 30 HANDLER FØR LIVE</span>
+  </div>
   {% for s in d.strategy_perf %}
-  <tr>
-    <td>{{ s.strategy }}</td><td>{{ s.closed_trades }}</td><td>{{ s.wins }}</td>
-    <td class="{{ 'pos' if s.net_pnl >= 0 else 'neg' }}">${{ s.net_pnl }}</td>
-  </tr>
+  <div class="tile" style="margin-bottom:8px;">
+    <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap;">
+      <strong style="font-size:14px;">{{ loop.index }}. {{ s.strategy | replace('_', ' ') | title }}</strong>
+      <span class="num {{ 'pos' if s.net_pnl >= 0 else 'neg' }}" style="font-size:16px; font-weight:600;">{{ '+' if s.net_pnl >= 0 }}{{ s.net_pnl }} USD</span>
+    </div>
+    <div class="grid cols-2" style="grid-template-columns:repeat(3, 1fr); margin-top:8px;">
+      <div><div class="label" style="font-family:var(--mono); font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--text2);">Win rate</div><div class="num">{{ s.win_rate }}%</div></div>
+      <div><div class="label" style="font-family:var(--mono); font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--text2);">Profit factor</div><div class="num {{ 'pos' if s.profit_factor and s.profit_factor >= 1 else 'warn' }}">{{ s.profit_factor if s.profit_factor is not none else '&#8734;' | safe }}</div></div>
+      <div><div class="label" style="font-family:var(--mono); font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--text2);">Expectancy</div><div class="num {{ 'pos' if s.expectancy >= 0 else 'neg' }}">{{ '+' if s.expectancy >= 0 }}{{ s.expectancy }} / trade</div></div>
+    </div>
+    <div class="bar"><span style="width:{{ s.gate_pct }}%"></span></div>
+    <div class="sub num faint" style="margin-top:4px;">Gatekeeper: {{ s.closed_trades }} / {{ s.gate_target }} handler, {{ s.gate_pct }}% valideret</div>
+  </div>
   {% else %}
-  <tr><td colspan="4" class="muted">Ingen lukkede handler endnu.</td></tr>
+  <p class="faint" style="margin:0;">Ingen lukkede handler endnu. Performance vises pr. strategi, når data findes.</p>
   {% endfor %}
-</table>
 </div>
 
-<h2>Seneste signaler</h2>
-<div class="table-wrap">
-<table>
-  <tr><th>Tid</th><th>Strategi</th><th>Symbol</th><th>Side</th><th>Status</th><th>Begrundelse</th></tr>
-  {% for s in d.signals %}
-  <tr>
-    <td>{{ s.created_at.strftime('%d-%m %H:%M') }}</td><td>{{ s.strategy }}</td><td>{{ s.symbol }}</td>
-    <td>{{ s.side|upper }}</td><td>{{ s.status }}{% if s.skip_reason %} <span class="muted">({{ s.skip_reason }})</span>{% endif %}</td>
-    <td class="muted">{{ s.reason }}</td>
-  </tr>
-  {% else %}
-  <tr><td colspan="6" class="muted">Ingen signaler endnu.</td></tr>
-  {% endfor %}
-</table>
+{# ---- Signaler / explainability ---- #}
+<div class="card" id="signaler">
+  <div class="card-head">
+    <h2>Seneste signaler</h2>
+    <span class="badge neutral">HVORFOR BLEV HANDLEN FORETAGET?</span>
+  </div>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Tid</th><th>Strategi</th><th>Symbol</th><th>Side</th><th>Status</th><th>Begrundelse</th></tr>
+    {% for s in d.signals %}
+    <tr>
+      <td class="num faint">{{ s.created_at.strftime('%d-%m %H:%M') }}</td>
+      <td><span class="chip">{{ s.strategy | upper }}</span></td>
+      <td class="sym">{{ s.symbol }}</td>
+      <td class="num {{ 'pos' if s.side == 'buy' else 'neg' }}">{{ 'KØB' if s.side == 'buy' else 'SALG' }}</td>
+      <td class="num">{{ s.status }}{% if s.skip_reason %} <span class="faint">({{ s.skip_reason }})</span>{% endif %}</td>
+      <td>
+        <div class="reason-chips">
+        {% for k, v in s.reason.items() %}<span class="chip">{{ k }}: {{ v }}</span>{% endfor %}
+        </div>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="faint">Ingen signaler endnu.</td></tr>
+    {% endfor %}
+  </table>
+  </div>
 </div>
 
-<h2>System Health</h2>
-<div class="cards">
-  <div class="card"><div class="label">Broker</div><div class="value {{ 'ok' if d.health.broker_connected else 'bad' }}">{{ 'Connected' if d.health.broker_connected else 'Ikke forbundet' }}</div></div>
-  <div class="card"><div class="label">Kritiske fejl 24t</div><div class="value {{ 'ok' if d.health.critical_events_24h == 0 else 'bad' }}">{{ d.health.critical_events_24h }}</div></div>
-  <div class="card"><div class="label">Sidste strategikørsel</div><div class="value" style="font-size:.85rem">{{ d.health.last_strategy_run }}</div></div>
-  <div class="card"><div class="label">Sidste reconciliation</div><div class="value" style="font-size:.85rem">{{ d.health.last_reconciliation }}</div></div>
+{# ---- System ---- #}
+<div class="card" id="system">
+  <div class="card-head">
+    <h2>System health telemetry</h2>
+    {% if d.health.broker_connected and d.health.critical_events_24h == 0 %}
+      <span class="badge ok"><span class="dot"></span>ALL SYSTEMS GREEN</span>
+    {% else %}
+      <span class="badge bad">TJEK STATUS</span>
+    {% endif %}
+  </div>
+  <div class="grid cols-2 cols-4">
+    <div class="tile"><div class="label">Broker API</div><div class="value" style="font-size:13px;"><span class="badge {{ 'ok' if d.health.broker_connected else 'bad' }}"><span class="dot"></span>{{ 'CONNECTED' if d.health.broker_connected else 'OFFLINE' }}</span></div></div>
+    <div class="tile"><div class="label">Kritiske fejl 24t</div><div class="value {{ 'pos' if d.health.critical_events_24h == 0 else 'neg' }}">{{ d.health.critical_events_24h }}</div></div>
+    <div class="tile"><div class="label">Sidste strategikørsel</div><div class="sub" style="margin-top:6px;">{{ d.health.last_strategy_run }}</div></div>
+    <div class="tile"><div class="label">Sidste reconciliation</div><div class="sub" style="margin-top:6px;">{{ d.health.last_reconciliation }}</div></div>
+  </div>
+
+  <div class="card-head" style="margin-top:14px;">
+    <h2>Paper gate før live</h2>
+    <span class="badge {{ 'ok' if d.paper_gate.passed else 'warn' }}">{{ 'BESTÅET' if d.paper_gate.passed else 'IKKE BESTÅET' }}</span>
+  </div>
+  <div class="table-wrap">
+  <table>
+    {% for name, passed in d.paper_gate.checks.items() %}
+    <tr><td>{{ name.replace('_', ' ') }}</td><td class="num {{ 'pos' if passed else 'warn' }}">{{ 'OK' if passed else 'ikke opfyldt' }}</td></tr>
+    {% endfor %}
+  </table>
+  </div>
+
+  <div class="card-head" style="margin-top:14px;">
+    <h2>Seneste motorevents</h2>
+    <span class="badge neutral">LOG</span>
+  </div>
+  <div class="console">
+    {% for e in d.events %}
+    <div><span class="lv-{{ e.level }}">[{{ e.level | upper }}]</span> <span class="faint">{{ e.ts.strftime('%d-%m %H:%M:%S') }}</span> {{ e.kind }}: {{ e.message }}</div>
+    {% else %}
+    <div class="faint">Ingen events.</div>
+    {% endfor %}
+  </div>
 </div>
 
-<h2>Paper gate (før live)</h2>
-<div class="table-wrap">
-<table>
-  {% for name, passed in d.paper_gate.checks.items() %}
-  <tr><td>{{ name.replace('_', ' ') }}</td><td class="{{ 'ok' if passed else 'bad' }}">{{ 'OK' if passed else 'Ikke opfyldt' }}</td></tr>
-  {% endfor %}
-  <tr><td><strong>Samlet</strong></td><td class="{{ 'ok' if d.paper_gate.passed else 'bad' }}"><strong>{{ 'BESTÅET' if d.paper_gate.passed else 'IKKE BESTÅET' }}</strong></td></tr>
-</table>
-</div>
+<script>
+(function () {
+  var btn = document.getElementById('hold-btn');
+  if (!btn) return;
+  var fill = document.getElementById('hold-fill');
+  var count = document.getElementById('hold-count');
+  var form = document.getElementById('kill-form');
+  var HOLD_MS = 2000, start = null, raf = null;
 
-<h2>Seneste system events</h2>
-<div class="table-wrap">
-<table>
-  <tr><th>Tid</th><th>Niveau</th><th>Type</th><th>Besked</th></tr>
-  {% for e in d.events %}
-  <tr>
-    <td>{{ e.ts.strftime('%d-%m %H:%M') }}</td>
-    <td class="{{ 'bad' if e.level in ('warning', 'critical') else 'muted' }}">{{ e.level }}</td>
-    <td>{{ e.kind }}</td><td class="muted">{{ e.message }}</td>
-  </tr>
-  {% else %}
-  <tr><td colspan="4" class="muted">Ingen events.</td></tr>
-  {% endfor %}
-</table>
-</div>
+  function tick(now) {
+    var elapsed = now - start;
+    var pct = Math.min(100, elapsed / HOLD_MS * 100);
+    fill.style.width = pct + '%';
+    count.textContent = Math.max(0, (HOLD_MS - elapsed) / 1000).toFixed(1) + 's';
+    if (elapsed >= HOLD_MS) { form.submit(); return; }
+    raf = requestAnimationFrame(tick);
+  }
+  function begin(e) { e.preventDefault(); start = performance.now(); raf = requestAnimationFrame(tick); }
+  function cancel() { if (raf) cancelAnimationFrame(raf); fill.style.width = '0%'; count.textContent = '2.0s'; }
+
+  btn.addEventListener('pointerdown', begin);
+  btn.addEventListener('pointerup', cancel);
+  btn.addEventListener('pointerleave', cancel);
+  btn.addEventListener('pointercancel', cancel);
+})();
+</script>
 {% endblock %}
